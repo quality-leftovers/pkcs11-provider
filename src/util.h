@@ -43,6 +43,10 @@ struct fetch_attrs {
 
 #define FA_GET_LEN(x, n, _l) (_l) = x[n].attr.ulValueLen
 
+bool url_escape(char* input, size_t input_size,  char* output, size_t output_size, size_t * output_written);
+
+bool url_escape_buffer(const unsigned char* buffer, size_t buffer_len, char* output, size_t output_size);
+
 CK_RV p11prov_fetch_attributes(P11PROV_CTX *ctx, P11PROV_SESSION *session,
                                CK_OBJECT_HANDLE object,
                                struct fetch_attrs *attrs,

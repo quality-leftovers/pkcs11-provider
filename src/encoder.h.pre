@@ -1,0 +1,31 @@
+/* Copyright (C) 2022 Simo Sorce <simo@redhat.com>
+   SPDX-License-Identifier: Apache-2.0 */
+#include <openssl/asn1t.h>
+#include <openssl/pem.h>
+
+BEGIN:
+
+PRE_IGNORE: #ifndef _ENCODER_GEN_H
+PRE_IGNORE: #include <openssl/asn1t.h>
+PRE_IGNORE: #include <openssl/pem.h>
+
+typedef struct {
+    ASN1_INTEGER *n;
+    ASN1_INTEGER *e;
+} P11PROV_RSA_PUBKEY;
+
+DECLARE_ASN1_FUNCTIONS(P11PROV_RSA_PUBKEY)
+DECLARE_PEM_write_bio(P11PROV_RSA_PUBKEY, P11PROV_RSA_PUBKEY)
+
+/* Reference to keypair in PKCS#11 */
+typedef struct {
+    ASN1_OBJECT *type;
+    ASN1_INTEGER *key_type;
+    ASN1_PRINTABLESTRING *uri;
+} P11PROV_KEYPAIR_REF;
+
+DECLARE_ASN1_FUNCTIONS(P11PROV_KEYPAIR_REF)
+DECLARE_PEM_write_bio(P11PROV_KEYPAIR_REF, P11PROV_KEYPAIR_REF)
+DECLARE_PEM_read_bio(P11PROV_KEYPAIR_REF, P11PROV_KEYPAIR_REF)
+
+PRE_IGNORE: #endif

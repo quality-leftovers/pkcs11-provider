@@ -262,6 +262,164 @@ done:
     return ret;
 }
 
+/* Copied from from libcurl:
+ * Portable character check (remember EBCDIC). Do not use isalnum() because
+ *  its behavior is altered by the current locale.
+ *  See https://datatracker.ietf.org/doc/html/rfc3986#section-2.3
+*/
+static bool url_isunreserved(unsigned char in)
+{
+  switch(in) {
+    case '0': case '1': case '2': case '3': case '4':
+    case '5': case '6': case '7': case '8': case '9':
+    case 'a': case 'b': case 'c': case 'd': case 'e':
+    case 'f': case 'g': case 'h': case 'i': case 'j':
+    case 'k': case 'l': case 'm': case 'n': case 'o':
+    case 'p': case 'q': case 'r': case 's': case 't':
+    case 'u': case 'v': case 'w': case 'x': case 'y': case 'z':
+    case 'A': case 'B': case 'C': case 'D': case 'E':
+    case 'F': case 'G': case 'H': case 'I': case 'J':
+    case 'K': case 'L': case 'M': case 'N': case 'O':
+    case 'P': case 'Q': case 'R': case 'S': case 'T':
+    case 'U': case 'V': case 'W': case 'X': case 'Y': case 'Z':
+    case '-': case '.': case '_': case '~':
+      return true;
+    default:
+      break;
+  }
+  return false;
+}
+
+bool url_escape(char* input, size_t input_size,  char* output, size_t output_size, size_t * output_written)
+{
+    if (input == NULL) {
+        P11PROV_debug("invalid input argument");
+        return false;
+    }
+    if (output == NULL && (output_size != 0 || output_written == NULL)) {
+        P11PROV_debug("invalid output arguments");
+        return false;
+    }
+
+    size_t written = 0;
+
+    /* compute buffer needed for encoding */
+	if (output_size == 0) {
+        while (*input && input_size > 0) {
+            if (url_isunreserved((unsigned char)*input++)) {
+				written += 1;
+			}
+			else {
+				written += 3;
+			}
+			--input_size;
+		}
+		*output_written = written;
+		return true;
+	}
+
+	/* encode */
+    while (input_size-- && *input) {
+        unsigned char in = *input++; /* treat the characters unsigned */
+
+        if (url_isunreserved(in)) {
+        	if (output_size < 2) {
+        		return false; /* insufficient space */
+        	}
+    		*output++ = in;
+    		output_size -= 1;
+    		written += 1;
+    	}
+    	else {
+		  if (output_size < 4) {
+              return false; /* insufficient space */
+		  }
+		  const char hex[] = "0123456789ABCDEF";
+		  *output++ = '%';
+		  *output++ = hex[in>>4];
+		  *output++ = hex[in & 0xf];
+		  output_size -= 3;
+		  written += 3;
+        }
+    }
+
+	if (output_written != NULL) {
+		*output_written = written;
+	}
+
+	*output = '\0';
+	return true;
+}
+
+bool url_escape_buffer(const unsigned char* buffer, size_t buffer_len, char* output, size_t output_size)
+{
+	if (output_size < (buffer_len * 3 + 1)) {
+		P11PROV_debug("output_len too small");
+		return false;
+	}
+
+	const char * hex = "0123456789ABCDEF";
+	while (buffer_len--) {
+		*output++ = '%';
+		*output++ = hex[(*buffer>>4)&0xF];
+		*output++ = hex[(*buffer++)&0xF];
+		buffer++;
+	}
+
+	*output = '\0';
+	return true;
+}
+
+#if 0
+int pkcs11_urn_append_text(char* buffer, size_t size, const char* key, const char* text, size_t text_size) {
+
+	char fragment_key[512];
+	char fragment_text[512];
+	size_t original_len = strlen(buffer);
+	size_t current_len = strlen(buffer);
+	size_t key_len = strlen(key);
+	int written;
+
+	if (text_size >= sizeof(fragment_text)) {
+		return -1; /* error */
+	}
+
+	written = snprintf(fragment_key, sizeof(fragment_key), "%s", key);
+	if ((written < 0 || written >= sizeof(fragment_key)-1)) {
+		return -1; /* error */
+	}
+	written = snprintf(fragment_text, sizeof(fragment_text), "%s", text);
+	if ((written < 0 || written >= sizeof(fragment_text)-1)) {
+		return -1; /* error */
+	}
+	size_t buffer_left = size-current_len;
+	written = snprintf(buffer+current_len, buffer_left, "%s=%s");
+	if ((written < 0) || (written >= buffer_left)) {
+		*(buffer+original_len) = '\0';
+		return -1; /* error */
+	}
+
+
+	size_t current_len = original_len;
+	size_t buffer_left = size-current_len;
+	written = snprintf(buffer+current_len, buffer_left, "%s", key);
+	if ((written < 0) || (written >= buffer_left)) {
+		*(buffer+original_len) = '\0';
+		return -1; /* error */
+	}
+	current_len = current_len + written;
+	buffer_left = size-current_len;
+
+	size_t max_len = text_size < buffer_left ? text_size : buffer_left;
+
+
+
+
+
+	return written;
+}
+#endif
+
 P11PROV_URI *p11prov_parse_uri(P11PROV_CTX *ctx, const char *uri)
 {
     struct p11prov_uri *u;
