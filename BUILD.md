@@ -17,3 +17,14 @@ The usual command to build are:
 - make
 - make check
 
+## Code generation
+
+Interface and encoding definitions C files are generated using `make generate-code` (Makefile in the project root).
+
+During code generation all files with suffixes ".pre", ".c.pre" and ".h.pre" are translated using C preprocessor and formatted using clang-format.
+
+Step by step description of code generation:
+- generate output filename for .pre file. Generated file is named .gen.c or .gen.h depending on input filename
+- writer copyright header
+- "transpile" the .pre file using C preprocessor and append all lines after LAST "BEGIN: " to output
+- strip prefix "PRE_IGNORE: " from all lines

@@ -693,7 +693,9 @@ static void p11prov_rsa_free(void *key)
 static void *p11prov_rsa_load(const void *reference, size_t reference_sz)
 {
     P11PROV_debug("rsa load %p, %ld", reference, reference_sz);
-    return p11prov_common_load(reference, reference_sz, CKK_RSA);
+    void *ret = p11prov_common_load(reference, reference_sz, CKK_RSA);
+    P11PROV_debug("rsa load completed (ret: %p)", ret);
+    return ret;
 }
 
 static int p11prov_rsa_has(const void *keydata, int selection)
@@ -774,7 +776,7 @@ static int p11prov_rsa_export(void *keydata, int selection,
     P11PROV_CTX *ctx = p11prov_obj_get_prov_ctx(key);
     CK_OBJECT_CLASS class = p11prov_obj_get_class(key);
 
-    P11PROV_debug("rsa export %p", keydata);
+    P11PROV_debug("rsa export %p (selection:%u)", keydata, selection);
 
     if (key == NULL) {
         return RET_OSSL_ERR;
