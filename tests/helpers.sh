@@ -58,3 +58,11 @@ gen_unsetvars() {
     | sed -e 's/export/unset/' -e 's/=.*$//' \
     >> ${TMPPDIR}/unsetvars
 }
+
+wait_for_process_or_kill() {
+    local __pid="$1"
+    local __timeout="$2"
+    timeout "$__timeout" tail --pid="$__pid" -f /dev/null || true
+    kill -9 "$__pid" 1>/dev/null 2>&1 || true
+}
+

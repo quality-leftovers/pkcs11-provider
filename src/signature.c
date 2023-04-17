@@ -430,9 +430,9 @@ static CK_RV p11prov_sig_pss_restrictions(P11PROV_SIG_CTX *sigctx,
     CK_ATTRIBUTE *allowed_mechs =
         p11prov_obj_get_attr(sigctx->key, CKA_ALLOWED_MECHANISMS);
 
-    if (allowed_mechs) {
+    int num_mechs = allowed_mechs == NULL ? 0 : allowed_mechs->ulValueLen;
+    if (num_mechs > 0) {
         CK_ATTRIBUTE_TYPE *mechs = (CK_ATTRIBUTE_TYPE *)allowed_mechs->pValue;
-        int num_mechs = allowed_mechs->ulValueLen;
         bool allowed = false;
 
         for (int i = 0; i < num_mechs; i++) {
@@ -449,6 +449,10 @@ static CK_RV p11prov_sig_pss_restrictions(P11PROV_SIG_CTX *sigctx,
         P11PROV_raise(sigctx->provctx, CKR_ACTION_PROHIBITED,
                       "mechanism not allowed with this key");
         return CKR_ACTION_PROHIBITED;
+    } else {
+        /* For SoftHSMv2 CKA_ALLOWED_MECHANISMS seems to be empty */
+        P11PROV_debug(
+            "CKA_ALLOWED_MECHANISMS empty. Assuming mechanism is allowed");
     }
 
     /* there are no restrictions on this key */
@@ -1204,10 +1208,9 @@ static int p11prov_rsasig_digest_sign_final(void *ctx, unsigned char *sig,
 {
     P11PROV_SIG_CTX *sigctx = (P11PROV_SIG_CTX *)ctx;
 
-    P11PROV_debug(
-        "rsa digest sign final (ctx=%p, sig=%p, siglen=%zu, "
-        "sigsize=%zu)",
-        ctx, sig, *siglen, sigsize);
+    P11PROV_debug("rsa digest sign final (ctx=%p, sig=%p, siglen=%zu, "
+                  "sigsize=%zu)",
+                  ctx, sig, *siglen, sigsize);
 
     if (sigctx == NULL) {
         return RET_OSSL_ERR;
@@ -1845,10 +1848,9 @@ static int p11prov_ecdsa_digest_sign_final(void *ctx, unsigned char *sig,
     size_t rawlen;
     int ret;
 
-    P11PROV_debug(
-        "ecdsa digest sign final (ctx=%p, sig=%p, siglen=%zu, "
-        "sigsize=%zu)",
-        ctx, sig, *siglen, sigsize);
+    P11PROV_debug("ecdsa digest sign final (ctx=%p, sig=%p, siglen=%zu, "
+                  "sigsize=%zu)",
+                  ctx, sig, *siglen, sigsize);
 
     if (sigctx == NULL) {
         return RET_OSSL_ERR;
