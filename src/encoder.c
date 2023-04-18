@@ -5,6 +5,7 @@
 #include <openssl/asn1t.h>
 #include <openssl/pem.h>
 #include <openssl/bio.h>
+#include "encoder.gen.h"
 
 static int p11prov_print_bn(BIO *out, const OSSL_PARAM *p, const char *str,
                             int indent)
@@ -153,8 +154,6 @@ const OSSL_DISPATCH p11prov_rsa_encoder_text_functions[] = {
     DISPATCH_TEXT_ENCODER_ELEM(ENCODE, rsa, encode_text),
     { 0, NULL },
 };
-
-#include "encoder.gen.c"
 
 static int p11prov_rsa_set_asn1key_data(const OSSL_PARAM *params, void *key)
 {
@@ -460,6 +459,242 @@ const OSSL_DISPATCH p11prov_rsa_encoder_spki_pem_functions[] = {
     DISPATCH_BASE_ENCODER_ELEM(FREECTX, freectx),
     DISPATCH_ENCODER_ELEM(DOES_SELECTION, rsa, spki, pem, does_selection),
     DISPATCH_ENCODER_ELEM(ENCODE, rsa, spki, pem, encode),
+    { 0, NULL },
+};
+
+static P11PROV_KEYPAIR_REF *
+p11prov_encoder_private_key_to_asn1(P11PROV_CTX *pctx, P11PROV_OBJ *key)
+{
+    P11PROV_KEYPAIR_REF *out = NULL;
+
+    P11PROV_SLOTS_CTX *sctx;
+
+    /* Information needed to build the URI */
+    char token_model[17];
+    char token_manufacturer[33];
+    char token_serial[17];
+    char token_label[33];
+    char object_id[65];
+    char object_label[41];
+
+    CK_OBJECT_CLASS class = p11prov_obj_get_class(key);
+    if (class != CKO_PRIVATE_KEY) {
+        P11PROV_debug("Can only encode private key");
+        return NULL;
+    }
+
+    CK_ATTRIBUTE *attrib;
+    attrib = p11prov_obj_get_attr(key, CKA_ID);
+    if ((attrib == NULL)
+        || !p11prov_url_escape(attrib->pValue, attrib->ulValueLen, object_id,
+                               sizeof(object_id), NULL)) {
+        P11PROV_debug("Failed to get CKA_ID (encode)");
+        goto error;
+    }
+
+    attrib = p11prov_obj_get_attr(key, CKA_LABEL);
+    if ((attrib == NULL)
+        || !p11prov_url_escape(attrib->pValue, attrib->ulValueLen, object_label,
+                               sizeof(object_label), NULL)) {
+        P11PROV_debug("Failed to get CKA_LABEL");
+        goto error;
+    }
+
+    out = P11PROV_KEYPAIR_REF_new();
+    if (!out) {
+        return NULL;
+    }
+
+    CK_SLOT_ID slot_id = p11prov_obj_get_slotid(key);
+    if (slot_id == CK_UNAVAILABLE_INFORMATION) {
+        P11PROV_debug("Slot id unavailable");
+        goto error;
+    }
+
+    if (p11prov_take_slots(pctx, &sctx) != CKR_OK) {
+        goto error;
+    }
+    /* Get all information about token */
+    bool token_info_set = false;
+    P11PROV_SLOT *slot = NULL;
+    int slot_idx = 0;
+    char slot_pin[64] = { '\0' };
+    while ((slot = p11prov_fetch_slot(sctx, &slot_idx)) != NULL
+           && !token_info_set) {
+        if (p11prov_slot_get_slot_id(slot) == slot_id) {
+            CK_TOKEN_INFO *token_info = p11prov_slot_get_token(slot);
+
+            if (!p11prov_url_escape((char *)token_info->model, 16, token_model,
+                                    sizeof(token_model), NULL)) {
+                P11PROV_debug("getting token model failed");
+                break;
+            }
+            if (!p11prov_url_escape((char *)token_info->manufacturerID, 32,
+                                    token_manufacturer,
+                                    sizeof(token_manufacturer), NULL)) {
+                P11PROV_debug("getting token manufacturerID failed");
+                break;
+            }
+            if (!p11prov_url_escape((char *)token_info->serialNumber, 16,
+                                    token_serial, sizeof(token_serial), NULL)) {
+                P11PROV_debug("getting token serialNumber failed");
+                break;
+            }
+            if (!p11prov_url_escape((char *)token_info->label, 32, token_label,
+                                    sizeof(token_label), NULL)) {
+                P11PROV_debug("getting token label failed");
+                break;
+            }
+
+            const char *cached_pin = p11prov_slot_get_cached_pin(slot);
+            if ((cached_pin != NULL) && (strlen(cached_pin) > 0)) {
+                p11prov_sprintf(slot_pin, sizeof(slot_pin), NULL, "%s",
+                                cached_pin);
+            }
+
+            token_info_set = true;
+        }
+    }
+    p11prov_return_slots(sctx);
+    sctx = NULL;
+
+    if (!token_info_set) {
+        P11PROV_debug("Token info not available");
+        goto error;
+    }
+
+    /* build the query part of the URI first */
+    char query[64] = { '\0' };
+    const char *env = getenv("PKCS11_ENCODER_INCLUDE_PIN");
+    if ((env != NULL) && (strcmp(env, "1") == 0)) {
+        P11PROV_debug("PKCS11_ENCODER_INCLUDE_PIN is set");
+        const char *pin = (const char *)p11prov_ctx_pin(pctx);
+        if ((pin == NULL) && (strlen(slot_pin) > 0)) {
+            P11PROV_debug("Using slot pin");
+            pin = slot_pin;
+        } else {
+            P11PROV_debug("Using module pin");
+        }
+        if (pin == NULL) {
+            /* Trying to query PIN from user makes no sense, because it would force us to verify it */
+            P11PROV_raise(pctx, CKR_GENERAL_ERROR,
+                          "Cannot include PIN because it is neither configured "
+                          "(pkcs11-module-token-pin), nor cached "
+                          "(pkcs11-module-cache-pins)");
+            goto done;
+        }
+        if (!p11prov_sprintf(query, sizeof(query), NULL, "?pin-value=%s",
+                             pin)) {
+            P11PROV_raise(pctx, CKR_GENERAL_ERROR, "Failed to build query");
+            goto done;
+        }
+    }
+    /* build the URI */
+    char uri[256 + sizeof(query)];
+    size_t uri_len = 0;
+    if (!p11prov_sprintf(uri, sizeof(uri), &uri_len,
+                         "pkcs11:model=%s;manufacturer=%s;serial=%s;"
+                         "token=%s;id=%s;object=%s;type=private%s",
+                         token_model, token_manufacturer, token_serial,
+                         token_label, object_id, object_label, query)) {
+        P11PROV_raise(pctx, CKR_GENERAL_ERROR, "Failed to build URI");
+        goto error;
+    }
+    P11PROV_debug("uri=%s", uri);
+
+    /* initialize asn1 object values */
+    out->type = OBJ_txt2obj(P11PROV_PRIVKEY_OID, 1);
+    ASN1_INTEGER_set(out->key_type, p11prov_obj_get_key_type(key));
+    ASN1_STRING_set(out->uri, uri, uri_len);
+
+    goto done;
+
+error:
+    P11PROV_KEYPAIR_REF_free(out);
+    out = NULL;
+
+done:
+    return out;
+}
+
+static int p11prov_encoder_private_key_write_pem(
+    CK_KEY_TYPE expected_key_type, void *inctx, OSSL_CORE_BIO *cbio,
+    const void *inkey, const OSSL_PARAM key_abstract[], int selection,
+    OSSL_PASSPHRASE_CALLBACK *cb, void *cbarg)
+{
+    struct p11prov_encoder_ctx *ctx = (struct p11prov_encoder_ctx *)inctx;
+    P11PROV_OBJ *key = (P11PROV_OBJ *)inkey;
+    CK_KEY_TYPE key_type;
+    P11PROV_KEYPAIR_REF *asn1 = NULL;
+    BIO *out = NULL;
+    int ret;
+
+    key_type = p11prov_obj_get_key_type(key);
+    if ((key_type != CKK_RSA) && (key_type != CKK_EC)) {
+        P11PROV_raise(ctx->provctx, CKR_GENERAL_ERROR, "Invalid Key Type");
+        ret = RET_OSSL_ERR;
+        goto done;
+    }
+    if (key_type != expected_key_type) {
+        P11PROV_raise(ctx->provctx, CKR_GENERAL_ERROR,
+                      "Key type mismatch (actual:%lu,expected:%lu)", key_type,
+                      expected_key_type);
+        ret = RET_OSSL_ERR;
+        goto done;
+    }
+
+    asn1 = p11prov_encoder_private_key_to_asn1(ctx->provctx, key);
+    if (!asn1) {
+        P11PROV_raise(ctx->provctx, CKR_GENERAL_ERROR,
+                      "Failed to encode private key");
+        ret = RET_OSSL_ERR;
+        goto done;
+    }
+
+    out = BIO_new_from_core_bio(p11prov_ctx_get_libctx(ctx->provctx), cbio);
+    if (!out) {
+        P11PROV_raise(ctx->provctx, CKR_GENERAL_ERROR, "Failed to init BIO");
+        ret = RET_OSSL_ERR;
+        goto done;
+    }
+
+    ret = PEM_write_bio_P11PROV_KEYPAIR_REF(out, asn1);
+    if (ret != RET_OSSL_OK) {
+        P11PROV_raise(ctx->provctx, CKR_GENERAL_ERROR,
+                      "Failed to write BIO PEM");
+        goto done;
+    }
+
+done:
+    P11PROV_KEYPAIR_REF_free(asn1);
+    BIO_free(out);
+    return ret;
+}
+
+static int p11prov_rsa_encoder_PrivateKeyInfo_pem_does_selection(void *inctx,
+                                                                 int selection)
+{
+    if (selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) {
+        return RET_OSSL_OK;
+    }
+    return RET_OSSL_ERR;
+}
+
+static int p11prov_rsa_encoder_PrivateKeyInfo_pem_encode(
+    void *inctx, OSSL_CORE_BIO *cbio, const void *inkey,
+    const OSSL_PARAM key_abstract[], int selection,
+    OSSL_PASSPHRASE_CALLBACK *cb, void *cbarg)
+{
+    return p11prov_encoder_private_key_write_pem(
+        CKK_RSA, inctx, cbio, inkey, key_abstract, selection, cb, cbarg);
+}
+
+const OSSL_DISPATCH p11prov_rsa_encoder_PrivateKeyInfo_pem_functions[] = {
+    DISPATCH_BASE_ENCODER_ELEM(NEWCTX, newctx),
+    DISPATCH_BASE_ENCODER_ELEM(FREECTX, freectx),
+    DISPATCH_ENCODER_ELEM(DOES_SELECTION, rsa, PrivateKeyInfo, pem,
+                          does_selection),
+    DISPATCH_ENCODER_ELEM(ENCODE, rsa, PrivateKeyInfo, pem, encode),
     { 0, NULL },
 };
 
@@ -800,5 +1035,32 @@ const OSSL_DISPATCH p11prov_ec_encoder_text_functions[] = {
     DISPATCH_BASE_ENCODER_ELEM(NEWCTX, newctx),
     DISPATCH_BASE_ENCODER_ELEM(FREECTX, freectx),
     DISPATCH_TEXT_ENCODER_ELEM(ENCODE, ec, encode_text),
+    { 0, NULL },
+};
+
+static int p11prov_ec_encoder_PrivateKeyInfo_pem_does_selection(void *inctx,
+                                                                int selection)
+{
+    if (selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) {
+        return RET_OSSL_OK;
+    }
+    return RET_OSSL_ERR;
+}
+
+static int p11prov_ec_encoder_PrivateKeyInfo_pem_encode(
+    void *inctx, OSSL_CORE_BIO *cbio, const void *inkey,
+    const OSSL_PARAM key_abstract[], int selection,
+    OSSL_PASSPHRASE_CALLBACK *cb, void *cbarg)
+{
+    return p11prov_encoder_private_key_write_pem(
+        CKK_EC, inctx, cbio, inkey, key_abstract, selection, cb, cbarg);
+}
+
+const OSSL_DISPATCH p11prov_ec_encoder_PrivateKeyInfo_pem_functions[] = {
+    DISPATCH_BASE_ENCODER_ELEM(NEWCTX, newctx),
+    DISPATCH_BASE_ENCODER_ELEM(FREECTX, freectx),
+    DISPATCH_ENCODER_ELEM(DOES_SELECTION, ec, PrivateKeyInfo, pem,
+                          does_selection),
+    DISPATCH_ENCODER_ELEM(ENCODE, ec, PrivateKeyInfo, pem, encode),
     { 0, NULL },
 };
