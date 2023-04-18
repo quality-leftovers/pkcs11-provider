@@ -32,6 +32,8 @@
 #define P11PROV_NAME_RSA "RSA"
 #define P11PROV_NAMES_RSA "RSA:rsaEncryption:1.2.840.113549.1.1.1"
 #define P11PROV_DESCS_RSA "PKCS11 RSA Implementation"
+#define P11PROV_NAMES_RSAKEY "RSA"
+#define P11PROV_DESCS_RSAKEY "PKCS11 RSA"
 #define P11PROV_NAME_RSAPSS "RSA-PSS"
 #define P11PROV_NAMES_RSAPSS "RSA-PSS:RSASSA-PSS:1.2.840.113549.1.1.10"
 #define P11PROV_DESCS_RSAPSS "PKCS11 RSA PSS Implementation"
@@ -59,6 +61,13 @@
 
 #define P11PROV_PARAM_URI "pkcs11_uri"
 #define P11PROV_PARAM_KEY_USAGE "pkcs11_key_usage"
+#define P11PROV_PRIVKEY_PEM_NAME "P11 PRIVATE KEY"
+/* TODO: Replace with real OID */
+#define P11PROV_PRIVKEY_OID "1.2.3.4"
+
+
+#define P11PROV_PARAM_KEY_LABEL "pkcs11_key_label"
+#define P11PROV_PARAM_KEY_ID "pkcs11_key_id"
 #define P11PROV_PARAM_SLOT_ID "pkcs11_slot_id"
 
 typedef struct p11prov_ctx P11PROV_CTX;

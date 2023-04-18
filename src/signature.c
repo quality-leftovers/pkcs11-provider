@@ -141,6 +141,8 @@ static void *p11prov_sig_dupctx(void *ctx)
     newctx->session = sigctx->session;
     sigctx->session = NULL;
 
+    goto done; /* [q-l]: HAProxy workaround */
+
     if (slotid != CK_UNAVAILABLE_INFORMATION && handle != CK_INVALID_HANDLE) {
         CK_SESSION_HANDLE newsess = p11prov_session_handle(newctx->session);
         CK_SESSION_HANDLE sess = CK_INVALID_HANDLE;

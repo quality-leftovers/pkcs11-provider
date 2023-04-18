@@ -5,6 +5,8 @@ noinst_HEADERS = \
 	asymmetric_cipher.h \
 	debug.h \
 	encoder.h \
+	encoder.gen.h \
+	decoder.h \
 	digests.h \
 	exchange.h \
 	kdf.h \
@@ -33,6 +35,8 @@ pkcs11_la_SOURCES = \
 	asymmetric_cipher.c \
 	debug.c \
 	encoder.c \
+	encoder.gen.c \
+	decoder.c \
 	digests.c \
 	exchange.c \
 	kdf.c \
