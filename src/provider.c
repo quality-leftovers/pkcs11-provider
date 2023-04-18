@@ -2,6 +2,7 @@
    SPDX-License-Identifier: Apache-2.0 */
 
 #include "provider.h"
+#include "decoder.h"
 #include <pthread.h>
 #include <string.h>
 
@@ -996,6 +997,9 @@ static CK_RV operations_init(P11PROV_CTX *ctx)
                  p11prov_rsa_encoder_pkcs1_der_functions);
     ADD_ALGO_EXT(RSA, encoder, "provider=pkcs11,output=pem,structure=pkcs1",
                  p11prov_rsa_encoder_pkcs1_pem_functions);
+    ADD_ALGO_EXT(RSAKEY, encoder,
+                 "provider=pkcs11,output=pem,structure=PrivateKeyInfo",
+                 p11prov_rsa_encoder_PrivateKeyInfo_pem_functions);
     ADD_ALGO_EXT(RSA, encoder,
                  "provider=pkcs11,output=der,structure=SubjectPublicKeyInfo",
                  p11prov_rsa_encoder_spki_der_functions);
@@ -1008,6 +1012,9 @@ static CK_RV operations_init(P11PROV_CTX *ctx)
                  p11prov_ec_encoder_pkcs1_der_functions);
     ADD_ALGO_EXT(EC, encoder, "provider=pkcs11,output=pem,structure=pkcs1",
                  p11prov_ec_encoder_pkcs1_pem_functions);
+    ADD_ALGO_EXT(EC, encoder,
+                 "provider=pkcs11,output=pem,structure=PrivateKeyInfo",
+                 p11prov_ec_encoder_PrivateKeyInfo_pem_functions);
     ADD_ALGO_EXT(EC, encoder,
                  "provider=pkcs11,output=der,structure=SubjectPublicKeyInfo",
                  p11prov_ec_encoder_spki_der_functions);
@@ -1042,6 +1049,16 @@ static const OSSL_ALGORITHM p11prov_store[] = {
     { NULL, NULL, NULL, NULL },
 };
 
+static const OSSL_ALGORITHM p11prov_decoders[] = {
+    { "DER", "provider=pkcs11,input=pem",
+      p11prov_pem_decoder_p11_der_functions },
+    { "RSA:rsaEncryption", "provider=pkcs11,input=der,structure=P11",
+      p11prov_der_decoder_p11_rsa_functions },
+    { "EC:id-ecPublicKey", "provider=pkcs11,input=der,structure=P11",
+      p11prov_der_decoder_p11_ec_functions },
+    { NULL, NULL, NULL }
+};
+
 static const OSSL_ALGORITHM *
 p11prov_query_operation(void *provctx, int operation_id, int *no_cache)
 {
@@ -1062,6 +1079,8 @@ p11prov_query_operation(void *provctx, int operation_id, int *no_cache)
         return ctx->op_asym_cipher;
     case OSSL_OP_ENCODER:
         return ctx->op_encoder;
+    case OSSL_OP_DECODER:
+        return p11prov_decoders;
     case OSSL_OP_STORE:
         return p11prov_store;
     }

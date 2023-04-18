@@ -43,6 +43,9 @@ struct fetch_attrs {
 
 #define FA_GET_LEN(x, n, _l) (_l) = x[n].attr.ulValueLen
 
+bool p11prov_url_escape(char *input, size_t input_size, char *output,
+                        size_t output_size, size_t *output_written);
+
 CK_RV p11prov_fetch_attributes(P11PROV_CTX *ctx, P11PROV_SESSION *session,
                                CK_OBJECT_HANDLE object,
                                struct fetch_attrs *attrs,
@@ -69,6 +72,10 @@ CK_RV p11prov_token_sup_attr(P11PROV_CTX *ctx, CK_SLOT_ID id, int action,
                              CK_ATTRIBUTE_TYPE attr, CK_BBOOL *data);
 CK_RV p11prov_copy_attr(CK_ATTRIBUTE *dst, CK_ATTRIBUTE *src);
 bool p11prov_x509_names_are_equal(CK_ATTRIBUTE *a, CK_ATTRIBUTE *b);
+
+/* Easier to handle version of snprintf that returns success / failure as boolean and does NOT truncate */
+bool p11prov_sprintf(char *s, size_t size, size_t *outsize, const char *format,
+                     ...);
 char *p11prov_alloc_sprintf(int size_hint, const char *format, ...);
 
 void trim_padded_field(CK_UTF8CHAR *field, ssize_t n);

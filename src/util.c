@@ -287,6 +287,145 @@ done:
     return ret;
 }
 
+/* Copied from from libcurl:
+ * Portable character check (remember EBCDIC). Do not use isalnum() because
+ *  its behavior is altered by the current locale.
+ *  See https://datatracker.ietf.org/doc/html/rfc3986#section-2.3
+*/
+static bool url_isunreserved(unsigned char in)
+{
+    switch (in) {
+    case '0':
+    case '1':
+    case '2':
+    case '3':
+    case '4':
+    case '5':
+    case '6':
+    case '7':
+    case '8':
+    case '9':
+    case 'a':
+    case 'b':
+    case 'c':
+    case 'd':
+    case 'e':
+    case 'f':
+    case 'g':
+    case 'h':
+    case 'i':
+    case 'j':
+    case 'k':
+    case 'l':
+    case 'm':
+    case 'n':
+    case 'o':
+    case 'p':
+    case 'q':
+    case 'r':
+    case 's':
+    case 't':
+    case 'u':
+    case 'v':
+    case 'w':
+    case 'x':
+    case 'y':
+    case 'z':
+    case 'A':
+    case 'B':
+    case 'C':
+    case 'D':
+    case 'E':
+    case 'F':
+    case 'G':
+    case 'H':
+    case 'I':
+    case 'J':
+    case 'K':
+    case 'L':
+    case 'M':
+    case 'N':
+    case 'O':
+    case 'P':
+    case 'Q':
+    case 'R':
+    case 'S':
+    case 'T':
+    case 'U':
+    case 'V':
+    case 'W':
+    case 'X':
+    case 'Y':
+    case 'Z':
+    case '-':
+    case '.':
+    case '_':
+    case '~':
+        return true;
+    default:
+        break;
+    }
+    return false;
+}
+
+bool p11prov_url_escape(char *input, size_t input_size, char *output,
+                        size_t output_size, size_t *output_written)
+{
+    if (input == NULL) {
+        P11PROV_debug("invalid input argument");
+        return false;
+    }
+    if (output == NULL && (output_size != 0 || output_written == NULL)) {
+        P11PROV_debug("invalid output arguments");
+        return false;
+    }
+
+    size_t written = 0;
+
+    /* compute buffer needed for encoding */
+    if (output_size == 0) {
+        while (*input && input_size > 0) {
+            if (url_isunreserved((unsigned char)*input++)) {
+                written += 1;
+            } else {
+                written += 3;
+            }
+            --input_size;
+        }
+        *output_written = written;
+        return true;
+    }
+
+    /* encode */
+    while (input_size-- && *input) {
+        unsigned char in = *input++; /* treat the characters unsigned */
+
+        if (url_isunreserved(in)) {
+            if (output_size < (2 + written)) {
+                return false; /* insufficient space */
+            }
+            *output++ = in;
+            written += 1;
+        } else {
+            if (output_size < (4 + written)) {
+                return false; /* insufficient space */
+            }
+            const char hex[] = "0123456789ABCDEF";
+            *output++ = '%';
+            *output++ = hex[in >> 4];
+            *output++ = hex[in & 0xf];
+            written += 3;
+        }
+    }
+
+    if (output_written != NULL) {
+        *output_written = written;
+    }
+
+    *output = '\0';
+    return true;
+}
+
 P11PROV_URI *p11prov_parse_uri(P11PROV_CTX *ctx, const char *uri)
 {
     struct p11prov_uri *u;
@@ -634,6 +773,30 @@ bool p11prov_x509_names_are_equal(CK_ATTRIBUTE *a, CK_ATTRIBUTE *b)
     X509_NAME_free(xa);
     X509_NAME_free(xb);
     return cmp == 0;
+}
+
+bool p11prov_sprintf(char *s, size_t size, size_t *outputlen,
+                     const char *format, ...)
+{
+    va_list args;
+
+    va_start(args, format);
+    int result = vsnprintf(s, size, format, args);
+    va_end(args);
+
+    if ((result >= 0) && (outputlen != NULL)) {
+        *outputlen = result;
+    }
+
+    if ((result >= 0) && ((size_t)result >= size)) {
+        /* vsnprintf truncated */
+        if (size != 0) {
+            *s = '\0';
+            return false;
+        }
+    }
+
+    return result >= 0;
 }
 
 char *p11prov_alloc_sprintf(int size_hint, const char *format, ...)
